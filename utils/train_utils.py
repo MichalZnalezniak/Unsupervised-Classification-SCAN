@@ -5,6 +5,8 @@ Licensed under the CC BY-NC 4.0 license (https://creativecommons.org/licenses/by
 import torch
 import numpy as np
 from utils.utils import AverageMeter, ProgressMeter
+import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 
 
 def simclr_train(train_loader, model, criterion, optimizer, epoch):
@@ -104,25 +106,34 @@ def selflabel_train(train_loader, model, criterion, optimizer, epoch, ema=None):
     progress = ProgressMeter(len(train_loader), [losses],
                                 prefix="Epoch: [{}]".format(epoch))
     model.train()
-
+    outputs_array = []
     for i, batch in enumerate(train_loader):
         images = batch['image'].cuda(non_blocking=True)
         images_augmented = batch['image_augmented'].cuda(non_blocking=True)
 
         with torch.no_grad(): 
             output = model(images)[0]
+            output_1 = torch.nn.Softmax(dim = 1)(output.detach())
         output_augmented = model(images_augmented)[0]
-
+        for elem in output_1:
+            print(torch.max(elem).item())
+            outputs_array.append(torch.max(elem).item())
         loss = criterion(output, output_augmented)
         losses.update(loss.item())
         
         optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        if epoch > 1:
+            optimizer.step()
 
-        if ema is not None: # Apply EMA to update the weights of the network
-            ema.update_params(model)
-            ema.apply_shadow(model)
+            if ema is not None: # Apply EMA to update the weights of the network
+                ema.update_params(model)
+                ema.apply_shadow(model)
         
-        if i % 25 == 0:
-            progress.display(i)
+            if i % 25 == 0:
+                progress.display(i)
+    plt.hist(outputs_array, bins=100, weights=np.ones(len(train_loader.dataset)) / len(train_loader.dataset))
+    plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
+    plt.savefig(f'./histogram_epoch_{epoch}')
+    plt.close()
+
